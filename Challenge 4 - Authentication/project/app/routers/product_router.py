@@ -57,7 +57,13 @@ async def average_price(
         .all()
     )
 
-    return result
+    return [
+    {
+        "category": item.category,
+        "average_price": float(item.average_price)
+    }
+    for item in result
+]
 
 
 @router.get("/{id}")
