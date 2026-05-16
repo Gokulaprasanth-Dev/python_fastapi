@@ -8,11 +8,11 @@ pwd_context = CryptContext(
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
-def verify_passowrd(
+def verify_password(
     plain_password: str,
     hashed_password: str
 ) -> bool:
-    pwd_context.verify(
+    return pwd_context.verify(
         plain_password,
         hashed_password
-    )    
+    )

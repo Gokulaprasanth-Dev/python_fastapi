@@ -18,6 +18,10 @@ class Database:
         print("Mongodb connection closed")          
         
     def get_database(self):
+        if self.client is None:
+            raise RuntimeError(
+                "Database not connected. Ensure the lifespan event has triggered database.connect()."
+            )
         return self.client[settings.database_name]
     
 database = Database()    
