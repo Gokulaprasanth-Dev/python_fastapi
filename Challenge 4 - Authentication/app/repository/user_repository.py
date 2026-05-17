@@ -7,15 +7,9 @@ from app.models.users_model import UserModel
 
 class UserRepository:
     
-    def __init__(self, db=None):
-        self._collection = None
-        self._db = db or database
-
-    @property
-    def collection(self):
-        if self._collection is None:
-            self._collection = self._db.get_database()["users"]
-        return self._collection
+    def __init__(self):
+        db = database.get_database()
+        self.collection= db["users"]
 
     async def create_user(self,user: UserModel):
         user_dict= user.model_dump()
