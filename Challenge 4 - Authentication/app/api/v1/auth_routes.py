@@ -13,10 +13,11 @@ router =APIRouter(
     tags=["Authentication"]
 )
 
-auth_service=AuthService()
+
 
 @router.post("/login",response_model=TokenResponseSchema)
 async def login(payload:LoginRequestSchema):
+    auth_service=AuthService()
     return await auth_service.login(email=payload.email,password=payload.password)    
 
 # @router.post("/logout",LogoutResponseSchema)

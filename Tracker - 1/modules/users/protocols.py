@@ -1,0 +1,10 @@
+from typing import Protocol
+
+from modules.users.model import UserModel
+
+class UserReader(Protocol):
+    async def email_exist(self,email:str) ->True: ...
+    async def get_user_by_email(self,email:str) -> dict: ...
+    
+class UserWriter(Protocol):
+    async def create_user(self,data:UserModel): ...
