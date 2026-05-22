@@ -18,6 +18,10 @@ from modules.auth.schemas.login_request_schema import LoginRequest
 from modules.auth.services.login import LoginService
 
 from modules.auth.adapters.mongo_token_blacklist_repository import MongoTokenBlacklistRepository
+
+from core.security.jwt import verify_access_token
+
+from modules.auth.services.logut import LogoutService
 router =APIRouter(
     prefix="/auth",
     tags=["auth"]
@@ -68,9 +72,16 @@ async def login(
     status_code=status.HTTP_204_NO_CONTENT
 )
 async def logout(
-
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncIOMotorDatabase = Depends(database.get_database),
 ):
     token_blacklist_repository = MongoTokenBlacklistRepository(db)
     
-    service = 
+    token = credentials.credentials
+    
+    payload = verify_access_token(token)
+    service = LogoutService(
+        blacklisted_token_write=token_blacklist_repository
+    )
+    
+    return await service.execute()

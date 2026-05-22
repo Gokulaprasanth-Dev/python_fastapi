@@ -1,4 +1,5 @@
 from modules.auth.protocols import BlacklistedTokenWrite
+from modules.auth.models.blacklisted_token_model import BlacklistedTokenModel
 class LogoutService():
     def __init__(
         self,
@@ -6,4 +7,5 @@ class LogoutService():
         ):
         self.blacklisted_token_write =blacklisted_token_write
         
-    async def execute():
+    async def execute(data: BlacklistedTokenModel):
+        
