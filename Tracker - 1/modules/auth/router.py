@@ -84,4 +84,4 @@ async def logout(
         blacklisted_token_write=token_blacklist_repository
     )
     
-    return await service.execute()
+    return await service.execute(payload)
