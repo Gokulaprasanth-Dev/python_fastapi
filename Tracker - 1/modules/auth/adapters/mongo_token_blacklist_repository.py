@@ -10,6 +10,10 @@ class MongoTokenBlacklistRepository():
         db:AsyncIOMotorDatabase
         )-> None:
         self.col = db[self.collection]
+        
+    async def is_token_blacklisted(self,jti: str) -> bool:
+        result = await self.col.find_one({"jti": jti})
+        return result is not None    
     
     async def create_blacklisted_token(self,data: BlacklistedTokenModel):
         token_blacklist_dict =data.model_dump(mode="json")

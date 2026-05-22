@@ -23,8 +23,3 @@ class LogoutService():
         )
         
         await self.blacklisted_token_write.create_blacklisted_token(blacklisted_token)
-        
-        return {
-            "message":" Logout is successful"
-        }
-        

@@ -21,7 +21,7 @@ from modules.auth.adapters.mongo_token_blacklist_repository import MongoTokenBla
 
 
 
-from modules.auth.services.logut import LogoutService
+from modules.auth.services.logout import LogoutService
 router =APIRouter(
     prefix="/auth",
     tags=["auth"]
