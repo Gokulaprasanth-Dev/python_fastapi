@@ -19,7 +19,7 @@ from modules.auth.services.login import LoginService
 
 from modules.auth.adapters.mongo_token_blacklist_repository import MongoTokenBlacklistRepository
 
-from core.security.jwt import verify_access_token
+
 
 from modules.auth.services.logut import LogoutService
 router =APIRouter(
@@ -79,9 +79,8 @@ async def logout(
     
     token = credentials.credentials
     
-    payload = verify_access_token(token)
     service = LogoutService(
         blacklisted_token_write=token_blacklist_repository
     )
     
-    return await service.execute(payload)
+    return await service.execute(token)
