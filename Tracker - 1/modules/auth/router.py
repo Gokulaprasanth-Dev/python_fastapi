@@ -16,6 +16,8 @@ from modules.auth.schemas.login_response_schema import LoginResponse
 from modules.auth.schemas.login_request_schema import LoginRequest
 
 from modules.auth.services.login import LoginService
+
+from modules.auth.adapters.mongo_token_blacklist_repository import MongoTokenBlacklistRepository
 router =APIRouter(
     prefix="/auth",
     tags=["auth"]
@@ -60,3 +62,15 @@ async def login(
     )
     
     return await service.execute(data)
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+async def logout(
+
+    db: AsyncIOMotorDatabase = Depends(database.get_database),
+):
+    token_blacklist_repository = MongoTokenBlacklistRepository(db)
+    
+    service = 
