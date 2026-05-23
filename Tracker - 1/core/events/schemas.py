@@ -36,6 +36,13 @@ class UserRegisteredEvent(BaseEvent):
     email: str
 
 
+class UserUpdatedEvent(BaseEvent):
+    """Published when a user's profile fields are changed."""
+    event_type: str = "user.updated"
+    user_id: str
+    updated_fields: list[str]
+
+
 class UserDeletedEvent(BaseEvent):
     """Published when a user is soft- or hard-deleted."""
     event_type: str = "user.deleted"

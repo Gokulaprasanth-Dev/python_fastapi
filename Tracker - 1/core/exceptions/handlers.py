@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from core.exceptions.base import DomainError
+from core.middleware.request_id import get_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -14,13 +15,11 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: DomainError,
     ) -> JSONResponse:
-        """
-        Handles all business/domain exceptions.
-        """
-
+        """Handles all business/domain exceptions."""
         logger.warning(
             "Domain error occurred",
             extra={
+                "request_id": get_request_id(),
                 "path": request.url.path,
                 "method": request.method,
                 "error_code": exc.error_code,
@@ -44,13 +43,11 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: Exception,
     ) -> JSONResponse:
-        """
-        Handles unexpected server errors.
-        """
-
+        """Handles unexpected server errors."""
         logger.exception(
             "Unexpected server error",
             extra={
+                "request_id": get_request_id(),
                 "path": request.url.path,
                 "method": request.method,
             },
