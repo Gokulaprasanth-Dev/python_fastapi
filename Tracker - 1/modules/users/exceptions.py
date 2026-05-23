@@ -1,4 +1,4 @@
-from core.exceptions.base import ConflictError, NotFoundError
+from core.exceptions.base import ConflictError, NotFoundError, ValidationError
 
 
 class EmailAlreadyExistsError(ConflictError):
@@ -9,7 +9,8 @@ class EmailAlreadyExistsError(ConflictError):
             message="Email already registered",
             details={"email": email},
         )
-        
+
+
 class UserNotFoundError(NotFoundError):
     error_code = "USER_NOT_FOUND"
 
@@ -17,4 +18,24 @@ class UserNotFoundError(NotFoundError):
         super().__init__(
             message="User not found",
             details={"user_id": user_id},
+        )
+
+
+class UnsupportedFileTypeError(ValidationError):
+    error_code = "UNSUPPORTED_FILE_TYPE"
+
+    def __init__(self, content_type: str, allowed: list[str]) -> None:
+        super().__init__(
+            message="Unsupported file type",
+            details={"content_type": content_type, "allowed": allowed},
+        )
+
+
+class FileTooLargeError(ValidationError):
+    error_code = "FILE_TOO_LARGE"
+
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__(
+            message="Uploaded file exceeds the size limit",
+            details={"max_bytes": max_bytes},
         )

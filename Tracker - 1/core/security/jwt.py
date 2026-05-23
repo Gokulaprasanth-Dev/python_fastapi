@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from uuid import uuid4
 
 from jose import JWTError, ExpiredSignatureError, jwt
@@ -8,9 +9,15 @@ from core.config.settings import get_settings
 settings = get_settings()
 
 
+class TokenVerifyResult(str, Enum):
+    VALID = "valid"
+    EXPIRED = "expired"
+    INVALID = "invalid"
+
+
 def create_access_token(
     data: dict,
-    expire_delta: timedelta | None =None,
+    expire_delta: timedelta | None = None,
 ) -> str:
     """
     Create and sign a JWT access token.
@@ -29,58 +36,41 @@ def create_access_token(
     Returns:
         Encoded JWT access token string.
     """
-
     to_encode = data.copy()
-
     now = datetime.now(timezone.utc)
-
     expire = now + (
         expire_delta
         if expire_delta is not None
-        else timedelta(
-            minutes=settings.jwt_access_token_expire_minutes
-        )
+        else timedelta(minutes=settings.jwt_access_token_expire_minutes)
     )
-
     to_encode.update({
         "iat": now,
         "exp": expire,
         "jti": str(uuid4()),
         "type": "access",
     })
-
-    encoded_jwt = jwt.encode(
+    return jwt.encode(
         to_encode,
         settings.jwt_secret_key.get_secret_value(),
         settings.jwt_algorithm,
     )
 
-    return encoded_jwt
 
-
-def verify_access_token(token: str):
+def verify_access_token(token: str) -> tuple[TokenVerifyResult, dict | None]:
     """
     Decode and validate an access token.
 
-    Validation includes:
-    - token signature verification
-    - expiration check
-    - required claim validation
-
-    Required claims:
-    - exp
-    - sub
-
-    Args:
-        token: JWT access token string.
+    Returns a (result, payload) tuple so callers can distinguish between
+    an expired token (safe to blacklist, allow logout) and an invalid one
+    (reject immediately).
 
     Returns:
-        Decoded token payload if valid.
-        None if token is invalid or expired.
+        (TokenVerifyResult.VALID, payload)   — token is good
+        (TokenVerifyResult.EXPIRED, None)    — valid signature, past expiry
+        (TokenVerifyResult.INVALID, None)    — bad signature / malformed / missing claims
     """
-
     try:
-        return jwt.decode(
+        payload = jwt.decode(
             token,
             settings.jwt_secret_key.get_secret_value(),
             algorithms=[settings.jwt_algorithm],
@@ -89,21 +79,18 @@ def verify_access_token(token: str):
                 "require_sub": True,
             },
         )
+        return TokenVerifyResult.VALID, payload
 
     except ExpiredSignatureError:
-        return None
+        return TokenVerifyResult.EXPIRED, None
 
     except JWTError:
-        return None
+        return TokenVerifyResult.INVALID, None
 
 
 def get_token_jti(token: str) -> str:
     """
-    Extract the JTI claim from a token.
-
-    Expiration validation is intentionally skipped
-    so the JTI can still be retrieved from expired
-    tokens during logout, revocation, or cleanup flows.
+    Extract the JTI claim from a token without checking expiry.
 
     Signature validation is still enforced.
 
@@ -114,10 +101,8 @@ def get_token_jti(token: str) -> str:
         Token JTI value.
 
     Raises:
-        JWTError: If the token is invalid or missing
-            the JTI claim.
+        JWTError: If the token is invalid or missing the JTI claim.
     """
-
     payload = jwt.decode(
         token,
         settings.jwt_secret_key.get_secret_value(),
@@ -127,5 +112,4 @@ def get_token_jti(token: str) -> str:
             "require_jti": True,
         },
     )
-
     return str(payload["jti"])

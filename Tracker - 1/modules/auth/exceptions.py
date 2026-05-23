@@ -1,8 +1,11 @@
-from core.exceptions.base import UnauthorizedError
-        
-from core.exceptions.base import ConflictError
+from core.exceptions.base import UnauthorizedError, ForbiddenError
 
-from core.exceptions.base import ForbiddenError
+# EmailAlreadyExistsError lives in modules.users.exceptions — the canonical owner
+# of email/user domain errors. Import it here for backwards compatibility so
+# any existing code that does `from modules.auth.exceptions import EmailAlreadyExistsError`
+# continues to work without change.
+from modules.users.exceptions import EmailAlreadyExistsError  # noqa: F401
+
 
 class InvalidCredentialsError(UnauthorizedError):
     error_code = "INVALID_CREDENTIALS"
@@ -30,23 +33,10 @@ class TokenRevokedError(UnauthorizedError):
 
     def __init__(self) -> None:
         super().__init__("Authentication token revoked")
-        
-
-
-
-class EmailAlreadyExistsError(ConflictError):
-    error_code = "EMAIL_ALREADY_EXISTS"
-
-    def __init__(self, email: str) -> None:
-        super().__init__(
-            message="Email already registered",
-            details={"email": email},
-        )
-
 
 
 class InactiveAccountError(ForbiddenError):
     error_code = "ACCOUNT_INACTIVE"
 
     def __init__(self) -> None:
-        super().__init__("Account is inactive")        
+        super().__init__("Account is inactive")

@@ -28,12 +28,15 @@ class LoginService:
         if not is_password_valid:
             raise InvalidCredentialsError()
 
-        if not user.get("is_active", True):
-            raise InactiveAccountError()  # FIX #3: was missing ()
+        # Fix minor: default False (deny by default) rather than True.
+        # A user record with a missing is_active field should not be treated
+        # as active — fail closed is the safe default.
+        if not user.get("is_active", False):
+            raise InactiveAccountError()
 
         access_token = create_access_token(
             data={
-                "sub": user["id"],
+                "sub": str(user["id"]),
                 "email": user["email"],
                 "role": user["role"],
             }

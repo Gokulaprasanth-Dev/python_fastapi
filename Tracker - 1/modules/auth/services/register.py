@@ -43,16 +43,16 @@ class RegisterService:
             full_name=data.full_name,
             email=data.email,
             hashed_password=hash_password(data.password),
-            phone=data.phone,
+            phone=str(data.phone) if data.phone else None,
             company_id=company.id,
         )
 
-        # FIX #4: atomic — both writes succeed or both roll back.
-        # Company is created first so a failure at user insert
-        # leaves no orphaned user with a dangling company_id.
+        # Fix 16: pass uow.session to both writes so MongoDB actually enrolls
+        # them in the same transaction. Without this, the UoW starts a session
+        # but the insert_one calls run outside it.
         async with self.uow:
-            await self.company_writer.create_company(company)
-            await self.user_writer.create_user(user)
+            await self.company_writer.create_company(company, session=self.uow.session)
+            await self.user_writer.create_user(user, session=self.uow.session)
 
         return RegisterResponse(
             user_id=user.id,
