@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # Fix 3 & 7: MongoDB with replica set so transactions work locally.
   # A single-node replica set is enough for development.
@@ -29,7 +27,7 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
+      - "9002:9000"   # host 9002 → container 9000 (avoids conflicts with other services)
       - "9001:9001"
     volumes:
       - minio_data:/data
