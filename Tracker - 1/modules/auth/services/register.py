@@ -1,5 +1,3 @@
-from typing import Callable, Awaitable
-
 from modules.users.protocols import UserReader, UserWriter
 from modules.companies.protocols import CompanyWriter
 
@@ -29,7 +27,12 @@ class RegisterService:
         self.uow = uow
 
     async def execute(self, data: RegisterRequest) -> RegisterResponse:
-
+        # Pre-flight uniqueness check: fast-fail for UX — avoids unnecessary
+        # writes. This is NOT the ultimate correctness guard; the unique index
+        # on users.email is. Under a race condition two concurrent registrations
+        # with the same email could both pass here, but the second insert will
+        # raise a DuplicateKeyError which is caught by the global exception
+        # handler and surfaces as a 409 Conflict.
         if await self.user_reader.email_exist(data.email):
             raise EmailAlreadyExistsError(data.email)
 
@@ -47,9 +50,6 @@ class RegisterService:
             company_id=company.id,
         )
 
-        # Fix 16: pass uow.session to both writes so MongoDB actually enrolls
-        # them in the same transaction. Without this, the UoW starts a session
-        # but the insert_one calls run outside it.
         async with self.uow:
             await self.company_writer.create_company(company, session=self.uow.session)
             await self.user_writer.create_user(user, session=self.uow.session)
