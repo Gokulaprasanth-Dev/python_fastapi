@@ -49,6 +49,8 @@ class Settings(BaseSettings):
 
     aws_region: str
     aws_s3_bucket_name: str
+    
+    aws_endpoint_url: str | None = None
 
     # Pydantic settings configuration
     model_config = SettingsConfigDict(
@@ -72,4 +74,4 @@ def get_settings() -> Settings:
         Application settings instance.
     """
 
-    return Settings()
+    return Settings() 
