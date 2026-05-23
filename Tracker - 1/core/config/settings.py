@@ -16,37 +16,35 @@ class Settings(BaseSettings):
     app_name: str
     app_version: str
 
-    # Runtime environment configuration
-    environment: Literal[
-        "local",
-        "dev",
-        "staging",
-        "prod",
-    ] = "local"
-
-    # Enable or disable debug behavior
+    # Runtime environment
+    environment: Literal["local", "dev", "staging", "prod"] = "local"
     debug: bool = False
 
-    # MongoDB configuration
+    # MongoDB
     mongo_uri: str
     mongo_db: str
-
-    # Fix 3: when False, NoOpUnitOfWork is used so the app can run against a
-    # standalone mongod (no replica set) in local dev without crashing on
-    # start_transaction(). Never set to False in staging/prod.
+    # Set False when running against a standalone mongod (no replica set).
+    # Never False in staging/prod.
     mongo_transactions_enabled: bool = True
 
-    # JWT authentication configuration
+    # JWT
     jwt_secret_key: SecretStr = Field(min_length=32)
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = Field(default=60, gt=0)
 
-    # AWS S3 configuration
+    # AWS S3 — both may be None when using instance-profile / IAM-role auth
     aws_access_key_id: SecretStr | None = None
     aws_secret_access_key: SecretStr | None = None
     aws_region: str
     aws_s3_bucket_name: str
     aws_endpoint_url: str | None = None
+
+    # CORS — comma-separated allowed origins, e.g. "https://app.example.com,https://admin.example.com"
+    # Leave empty to deny all cross-origin requests (recommended for production APIs).
+    cors_allowed_origins: list[str] = Field(default_factory=list)
+
+    # Trusted hosts — leave empty to allow all (only for local dev)
+    trusted_hosts: list[str] = Field(default_factory=list)
 
     model_config = SettingsConfigDict(
         env_file=".env",

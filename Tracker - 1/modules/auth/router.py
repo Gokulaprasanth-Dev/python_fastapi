@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from core.config.settings import get_settings
 from core.db.motor import database
 from core.events.event_bus import NoOpEventBus
-from core.uow.mongo_unit_of_work import MongoUnitOfWork, NoOpUnitOfWork
+from core.middleware.rate_limit import limiter
+from core.uow.mongo_unit_of_work import MongoUnitOfWork, NoOpUnitOfWork, UnitOfWork
 
 from modules.users.adapters.mongo_user_repository import MongoUserRepository
 from modules.companies.adapters.mongo_company_repository import MongoCompanyRepository
@@ -24,15 +25,17 @@ from modules.auth.services.logout import LogoutService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _bearer = HTTPBearer()
-_settings = get_settings()
 
 
-def _make_uow():
+def get_uow() -> UnitOfWork:
     """
-    Fix 3: return a real UoW when transactions are enabled (Atlas / replica set),
-    or a no-op UoW for standalone mongod in local dev.
+    FastAPI dependency that returns the appropriate Unit of Work.
+
+    Returns MongoUnitOfWork (real transactions) when MONGO_TRANSACTIONS_ENABLED
+    is True, or NoOpUnitOfWork for standalone-mongod local dev environments.
     """
-    if _settings.mongo_transactions_enabled:
+    settings = get_settings()
+    if settings.mongo_transactions_enabled:
         return MongoUnitOfWork(database.get_client())
     return NoOpUnitOfWork()
 
@@ -42,9 +45,12 @@ def _make_uow():
     response_model=RegisterResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("5/minute")
 async def register(
+    request: Request,
     data: RegisterRequest,
     db: AsyncIOMotorDatabase = Depends(database.get_database),
+    uow: UnitOfWork = Depends(get_uow),
 ) -> RegisterResponse:
     user_repository = MongoUserRepository(db)
     company_repository = MongoCompanyRepository(db)
@@ -52,7 +58,7 @@ async def register(
         user_reader=user_repository,
         user_writer=user_repository,
         company_writer=company_repository,
-        uow=_make_uow(),
+        uow=uow,
     )
     return await service.execute(data)
 
@@ -62,7 +68,9 @@ async def register(
     response_model=LoginResponse,
     status_code=status.HTTP_200_OK,
 )
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     data: LoginRequest,
     db: AsyncIOMotorDatabase = Depends(database.get_database),
 ) -> LoginResponse:

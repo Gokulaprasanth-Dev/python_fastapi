@@ -1,9 +1,13 @@
+from datetime import datetime, timezone
+
 from motor.motor_asyncio import AsyncIOMotorDatabase, AsyncIOMotorClientSession
 
 from modules.users.model import UserModel
-from modules.users.schemas.update_user_request_schema import UpdateUserRequest
 
-from datetime import datetime, timezone
+
+def _now() -> datetime:
+    """Return the current UTC datetime. Used for updated_at stamps."""
+    return datetime.now(timezone.utc)
 
 
 def _map_user(doc: dict | None) -> dict | None:
@@ -12,14 +16,10 @@ def _map_user(doc: dict | None) -> dict | None:
 
     - Strips the internal _id (ObjectId) field.
     - Guarantees the 'id' key is always present as a string.
-
-    Fix 14: callers no longer need to worry about _id leaking through
-    or KeyError on 'id' if the document shape is unexpected.
     """
     if doc is None:
         return None
     doc.pop("_id", None)
-    # Ensure id is always a plain string regardless of how it was stored
     if "id" in doc:
         doc["id"] = str(doc["id"])
     return doc
@@ -40,7 +40,6 @@ class MongoUserRepository:
         user: UserModel,
         session: AsyncIOMotorClientSession | None = None,
     ) -> str:
-        """Fix 16: accept optional session so callers inside a UoW can enroll this write."""
         user_dict = user.model_dump(mode="json")
         result = await self.col.insert_one(user_dict, session=session)
         return str(result.inserted_id)
@@ -59,7 +58,8 @@ class MongoUserRepository:
         updates: dict,
         session: AsyncIOMotorClientSession | None = None,
     ) -> bool:
-        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        # Store as a native datetime so MongoDB range queries work correctly.
+        updates["updated_at"] = _now()
         result = await self.col.update_one(
             {"id": user_id},
             {"$set": updates},
@@ -75,10 +75,7 @@ class MongoUserRepository:
     ) -> bool:
         result = await self.col.update_one(
             {"id": user_id},
-            {"$set": {
-                "profile_image_url": url,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }},
+            {"$set": {"profile_image_url": url, "updated_at": _now()}},
             session=session,
         )
         return result.matched_count > 0
@@ -90,10 +87,7 @@ class MongoUserRepository:
     ) -> bool:
         result = await self.col.update_one(
             {"id": user_id},
-            {"$set": {
-                "is_active": False,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }},
+            {"$set": {"is_active": False, "updated_at": _now()}},
             session=session,
         )
         return result.matched_count > 0

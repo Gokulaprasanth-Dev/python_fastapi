@@ -10,14 +10,18 @@ class S3StorageClient:
         self.bucket = settings.aws_s3_bucket_name
         self.region = settings.aws_region
 
-        self._session = aioboto3.Session(
-            aws_access_key_id=settings.aws_access_key_id.get_secret_value(),
-            aws_secret_access_key=settings.aws_secret_access_key.get_secret_value(),
-            region_name=self.region,
-        )
+        # Build explicit credentials only when both keys are present.
+        # When running on EC2 / ECS with an IAM role, leave them out so
+        # boto3 falls back to the instance-metadata credential chain.
+        session_kwargs: dict = {"region_name": self.region}
+        if settings.aws_access_key_id is not None and settings.aws_secret_access_key is not None:
+            session_kwargs["aws_access_key_id"] = settings.aws_access_key_id.get_secret_value()
+            session_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key.get_secret_value()
 
-        # None → real AWS S3 (prod)
-        # set  → MinIO or any S3-compatible (local/Docker)
+        self._session = aioboto3.Session(**session_kwargs)
+
+        # None → real AWS S3 (prod / IAM role)
+        # set  → MinIO or any S3-compatible endpoint (local/Docker)
         self._endpoint_url = settings.aws_endpoint_url or None
 
     async def upload_file(
