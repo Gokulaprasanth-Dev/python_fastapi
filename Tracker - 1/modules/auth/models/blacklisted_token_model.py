@@ -10,6 +10,7 @@ class BlacklistedTokenModel(BaseSchema):
     id:UUID = Field(default_factory=uuid4)
     jti: str
     user_id: str
-    expires_at: datetime =Field(
+    expires_at: datetime
+    created_at: datetime =Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )

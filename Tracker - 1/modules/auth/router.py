@@ -76,11 +76,10 @@ async def logout(
     db: AsyncIOMotorDatabase = Depends(database.get_database),
 ):
     token_blacklist_repository = MongoTokenBlacklistRepository(db)
-    
-    token = credentials.credentials
-    
+     
     service = LogoutService(
-        blacklisted_token_write=token_blacklist_repository
+        blacklisted_token_write=token_blacklist_repository,
+        blacklisted_token_read=token_blacklist_repository
     )
     
-    return await service.execute(token)
+    await service.execute(credentials.credentials)

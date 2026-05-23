@@ -42,8 +42,8 @@ class LoginService():
         
         return LoginResponse(
                 access_token=access_token,
-                toke_type="bearer",
-                used_id=user["id"],
+                token_type="bearer",
+                user_id=user["id"],
                 company_id=user["company_id"],
                 full_name=user["full_name"],
                 email= user["email"]
