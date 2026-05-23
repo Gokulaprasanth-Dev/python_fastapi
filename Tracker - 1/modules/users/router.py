@@ -2,18 +2,19 @@ from fastapi import APIRouter, Depends, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from core.db.motor import database
+from core.dependencies.auth import CurrentUser, require_role
+from core.exceptions.base import ForbiddenError
+from core.storage.dependencies import Storage
+
 from modules.users.adapters.mongo_user_repository import MongoUserRepository
 from modules.users.schemas.update_user_request_schema import UpdateUserRequest
 from modules.users.schemas.update_user_response_schema import UpdateUserResponse
+from modules.users.schemas.avatar_upload_response_schema import AvatarUploadResponse
 from modules.users.services.update_user import UpdateUserService
 from modules.users.services.delete_user import SoftDeleteUserService, HardDeleteUserService
+from modules.users.services.upload_avatar import AvatarUploadService
 
 from fastapi import UploadFile, File
-from core.dependencies.auth import CurrentUser
-from core.storage.dependencies import Storage
-from modules.users.services.upload_avatar import AvatarUploadService
-from modules.users.schemas.avatar_upload_response_schema import AvatarUploadResponse
-from core.exceptions.base import ForbiddenError
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -26,8 +27,12 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def update_user(
     user_id: str,
     data: UpdateUserRequest,
+    current_user: CurrentUser,                                    # Fix 1: require auth
     db: AsyncIOMotorDatabase = Depends(database.get_database),
 ) -> UpdateUserResponse:
+    # Fix 6: both sides normalised to str; UUID formatting differences can't cause a mismatch
+    if current_user["sub"] != user_id:
+        raise ForbiddenError("You can only update your own profile")
     repo = MongoUserRepository(db)
     service = UpdateUserService(user_reader=repo, user_writer=repo)
     return await service.execute(user_id, data)
@@ -39,8 +44,12 @@ async def update_user(
 )
 async def soft_delete_user(
     user_id: str,
+    current_user: CurrentUser,                                    # Fix 1: require auth
     db: AsyncIOMotorDatabase = Depends(database.get_database),
 ):
+    # Users may only soft-delete their own account; admins can delete any account.
+    if current_user["sub"] != user_id and current_user.get("role") != "admin":
+        raise ForbiddenError("You can only delete your own account")
     repo = MongoUserRepository(db)
     service = SoftDeleteUserService(user_reader=repo, user_writer=repo)
     await service.execute(user_id)
@@ -49,6 +58,7 @@ async def soft_delete_user(
 @router.delete(
     "/{user_id}/hard",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_role("admin"))],               # Fix 1: admin-only hard delete
 )
 async def hard_delete_user(
     user_id: str,
@@ -57,7 +67,8 @@ async def hard_delete_user(
     repo = MongoUserRepository(db)
     service = HardDeleteUserService(user_reader=repo, user_writer=repo)
     await service.execute(user_id)
-    
+
+
 @router.post(
     "/{user_id}/avatar",
     response_model=AvatarUploadResponse,

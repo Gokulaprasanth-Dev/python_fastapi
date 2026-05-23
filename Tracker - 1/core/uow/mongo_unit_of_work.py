@@ -9,8 +9,8 @@ class UnitOfWork(Protocol):
 
     Usage:
         async with uow:
-            await repo.create(...)
-            await repo.create(...)
+            await repo.create(..., session=uow.session)
+            await repo.create(..., session=uow.session)
         # commits on clean exit, rolls back on exception
     """
 
@@ -31,11 +31,17 @@ class MongoUnitOfWork:
     Commits automatically on clean context-manager exit.
     Aborts automatically if an exception is raised.
 
-    Usage:
-        uow = MongoUnitOfWork(motor_client)
+    IMPORTANT: Pass uow.session to every repository call inside the block,
+    otherwise MongoDB will not enroll those writes in the transaction:
+
         async with uow:
             await company_repo.create_company(company, session=uow.session)
             await user_repo.create_user(user, session=uow.session)
+
+    NOTE: Transactions require a MongoDB replica set or Atlas cluster.
+    Standalone mongod instances will raise a server error at start_transaction().
+    For local development without a replica set, set MONGO_TRANSACTIONS_ENABLED=false
+    in your .env and the NoOpUnitOfWork will be used instead.
     """
 
     def __init__(self, client: AsyncIOMotorClient) -> None:
@@ -68,3 +74,31 @@ class MongoUnitOfWork:
     async def rollback(self) -> None:
         if self._session:
             await self._session.abort_transaction()
+
+
+class NoOpUnitOfWork:
+    """
+    No-op Unit of Work for environments where transactions are unavailable
+    (e.g. standalone mongod in local dev without a replica set).
+
+    Writes are NOT atomic. Use only in development.
+    """
+
+    def __init__(self) -> None:
+        self._session = None
+
+    @property
+    def session(self) -> None:
+        return None
+
+    async def __aenter__(self) -> "NoOpUnitOfWork":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
+
+    async def commit(self) -> None:
+        pass
+
+    async def rollback(self) -> None:
+        pass

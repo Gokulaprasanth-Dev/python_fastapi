@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from core.config.settings import get_settings
 from core.db.motor import database
-from core.uow.mongo_unit_of_work import MongoUnitOfWork  # FIX #4: UoW
-from core.events.event_bus import NoOpEventBus           # FIX #11: EventBus
+from core.events.event_bus import NoOpEventBus
+from core.uow.mongo_unit_of_work import MongoUnitOfWork, NoOpUnitOfWork
 
 from modules.users.adapters.mongo_user_repository import MongoUserRepository
-from modules.companies.adapters.mongo_company_repository import MongoCompanyRepository  # FIX #7: adapters not adopters
+from modules.companies.adapters.mongo_company_repository import MongoCompanyRepository
 
 from modules.auth.schemas.register_request_schema import RegisterRequest
 from modules.auth.schemas.register_response_schema import RegisterResponse
@@ -22,8 +23,18 @@ from modules.auth.services.logout import LogoutService
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
 _bearer = HTTPBearer()
+_settings = get_settings()
+
+
+def _make_uow():
+    """
+    Fix 3: return a real UoW when transactions are enabled (Atlas / replica set),
+    or a no-op UoW for standalone mongod in local dev.
+    """
+    if _settings.mongo_transactions_enabled:
+        return MongoUnitOfWork(database.get_client())
+    return NoOpUnitOfWork()
 
 
 @router.post(
@@ -37,15 +48,11 @@ async def register(
 ) -> RegisterResponse:
     user_repository = MongoUserRepository(db)
     company_repository = MongoCompanyRepository(db)
-
-    # FIX #4: pass UoW so register service can wrap both writes in a transaction
-    uow = MongoUnitOfWork(database.get_client())
-
     service = RegisterService(
         user_reader=user_repository,
         user_writer=user_repository,
         company_writer=company_repository,
-        uow=uow,
+        uow=_make_uow(),
     )
     return await service.execute(data)
 
@@ -73,8 +80,6 @@ async def logout(
     db: AsyncIOMotorDatabase = Depends(database.get_database),
 ) -> None:
     token_blacklist_repository = MongoTokenBlacklistRepository(db)
-
-    # FIX #11: inject event bus — no-op today, swap later for real broker
     service = LogoutService(
         blacklisted_token_write=token_blacklist_repository,
         blacklisted_token_read=token_blacklist_repository,

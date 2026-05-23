@@ -1,14 +1,39 @@
 version: "3.9"
 
 services:
+  # Fix 3 & 7: MongoDB with replica set so transactions work locally.
+  # A single-node replica set is enough for development.
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: |
+        mongosh --quiet --eval "
+          try { rs.status().ok } catch(e) {
+            rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]});
+          }
+        "
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   minio:
     image: minio/minio
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio_data:/data
 
 volumes:
+  mongo_data:
   minio_data:
