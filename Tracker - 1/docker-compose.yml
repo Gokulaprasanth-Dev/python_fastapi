@@ -1,6 +1,4 @@
 services:
-  # Fix 3 & 7: MongoDB with replica set so transactions work locally.
-  # A single-node replica set is enough for development.
   mongo:
     image: mongo:7
     command: ["--replSet", "rs0", "--bind_ip_all"]
@@ -27,8 +25,8 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
     command: server /data --console-address ":9001"
     ports:
-      - "9002:9000"   # host 9002 → container 9000 (avoids conflicts with other services)
-      - "9001:9001"
+      - "9100:9000"   # MinIO API     → http://localhost:9100
+      - "9101:9001"   # MinIO console → http://localhost:9101
     volumes:
       - minio_data:/data
 
