@@ -1,3 +1,5 @@
+import logging
+import logging.config
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -14,6 +16,30 @@ from core.db.motor import database
 from core.db.indexes import ensure_indexes
 from core.exceptions.handlers import register_exception_handlers
 from core.middleware.rate_limit import limiter
+from core.middleware.request_id import RequestIdFilter, RequestIdMiddleware
+
+
+def _configure_logging() -> None:
+    """
+    Configure structured logging with request ID injection.
+
+    Every log line gets a [request_id] field so production log queries
+    like `grep <uuid>` show the full lifecycle of a single request.
+    The format is kept simple enough to ingest in most log aggregators
+    (Datadog, CloudWatch, Loki) without extra parsing rules.
+    """
+    handler = logging.StreamHandler()
+    handler.addFilter(RequestIdFilter())
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(name)s [%(request_id)s] %(message)s",
+        handlers=[handler],
+    )
+
+    # Suppress noisy third-party loggers in production.
+    logging.getLogger("motor").setLevel(logging.WARNING)
+    logging.getLogger("pymongo").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -27,18 +53,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     settings = get_settings()
 
+    _configure_logging()
+
     app = FastAPI(
         title=settings.app_name,
         debug=settings.debug,
         lifespan=lifespan,
     )
 
-    # Attach the rate-limiter state so slowapi can find it
+    # Request ID must be first so all subsequent middleware and handlers
+    # can read the correlation ID from the context var.
+    app.add_middleware(RequestIdMiddleware)
+
+    # Attach the rate-limiter state so slowapi can find it.
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 
-    # CORS — restrict to configured origins in non-local environments
+    # CORS — restrict to configured origins in non-local environments.
     if settings.cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -56,7 +88,7 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    # Trusted hosts — only enforce when a list is configured
+    # Trusted hosts — only enforce when a list is configured.
     if settings.trusted_hosts:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 

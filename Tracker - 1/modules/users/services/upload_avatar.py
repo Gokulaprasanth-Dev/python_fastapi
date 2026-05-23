@@ -3,9 +3,16 @@ from uuid import uuid4
 from fastapi import UploadFile
 
 from core.storage.protocol import StorageProtocol
-from modules.users.exceptions import UserNotFoundError, UnsupportedFileTypeError, FileTooLargeError
+from modules.users.exceptions import (
+    UserNotFoundError,
+    UnsupportedFileTypeError,
+    FileTooLargeError,
+    InvalidImageContentError,
+)
 from modules.users.protocols import UserReader, UserWriter
 from modules.users.schemas.avatar_upload_response_schema import AvatarUploadResponse
+from shared.utils.image_validation import validate_image_magic_bytes
+from shared.utils.storage_keys import extract_avatar_key
 
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -32,7 +39,7 @@ class AvatarUploadService:
         self.storage = storage
 
     async def execute(self, user_id: str, file: UploadFile) -> AvatarUploadResponse:
-        # Validate content-type before reading any bytes
+        # 1. Validate declared Content-Type before reading any bytes.
         if file.content_type not in ALLOWED_CONTENT_TYPES:
             raise UnsupportedFileTypeError(
                 content_type=file.content_type or "unknown",
@@ -43,15 +50,21 @@ class AvatarUploadService:
         if not user:
             raise UserNotFoundError(user_id)
 
-        # Enforce size limit — read into memory once, check, then use
+        # 2. Read into memory once, enforce size limit.
         file_bytes = await file.read()
         if len(file_bytes) > MAX_AVATAR_BYTES:
             raise FileTooLargeError(max_bytes=MAX_AVATAR_BYTES)
 
+        # 3. Validate actual file bytes against known magic bytes.
+        #    Content-Type headers are client-controlled; this closes the gap
+        #    where a malicious client sets Content-Type: image/jpeg on a
+        #    non-image payload (e.g. a script or executable).
+        if not validate_image_magic_bytes(file_bytes, file.content_type):
+            raise InvalidImageContentError(content_type=file.content_type)
+
         old_url: str | None = user.get("profile_image_url")
         if old_url:
-            old_key = self._extract_key_static(old_url)
-            await self.storage.delete_file(old_key)
+            await self.storage.delete_file(extract_avatar_key(old_url))
 
         ext = EXTENSION_MAP.get(file.content_type, "jpg")
         key = f"avatars/{user_id}/{uuid4()}.{ext}"
@@ -68,24 +81,3 @@ class AvatarUploadService:
             user_id=user["id"],
             profile_image_url=new_url,
         )
-
-    @staticmethod
-    def _extract_key_static(url: str) -> str:
-        """
-        Extract the S3 object key from a full avatar URL.
-
-        Walks from the first 'avatars/' path segment to the end. If the
-        sentinel is absent (e.g. an externally-set URL), returns the
-        original URL unchanged — the caller should handle or log the error.
-        """
-        parts = url.split("/")
-        avatar_index = next(
-            (i for i, p in enumerate(parts) if p == "avatars"), None
-        )
-        if avatar_index is None:
-            return url
-        return "/".join(parts[avatar_index:])
-
-    # Instance alias for backwards compatibility
-    def _extract_key(self, url: str) -> str:
-        return self._extract_key_static(url)

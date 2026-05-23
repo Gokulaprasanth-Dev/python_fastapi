@@ -39,3 +39,19 @@ class FileTooLargeError(ValidationError):
             message="Uploaded file exceeds the size limit",
             details={"max_bytes": max_bytes},
         )
+
+
+class InvalidImageContentError(ValidationError):
+    """
+    Raised when a file's declared Content-Type doesn't match its actual
+    byte content.  Catches clients that spoof the Content-Type header to
+    upload a non-image payload.
+    """
+
+    error_code = "INVALID_IMAGE_CONTENT"
+
+    def __init__(self, content_type: str) -> None:
+        super().__init__(
+            message="File content does not match the declared type",
+            details={"declared_content_type": content_type},
+        )

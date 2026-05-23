@@ -5,6 +5,10 @@ Called once at application startup. All indexes are created with
 create_if_not_exists semantics (Motor silently skips existing indexes
 with matching definitions).
 
+Note: the `background` parameter was removed — it was deprecated in
+MongoDB 4.2 and index builds are always non-blocking now. Passing it
+produces a deprecation warning in the server logs.
+
 Index rationale:
   users.email         — unique; guards against duplicate registration and
                         enables fast login lookups.
@@ -28,19 +32,18 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     """Create all required indexes. Safe to call on every startup."""
 
     # ── users ──────────────────────────────────────────────────────────────
-    await db["users"].create_index("email", unique=True, background=True)
-    await db["users"].create_index("id", unique=True, background=True)
+    await db["users"].create_index("email", unique=True)
+    await db["users"].create_index("id", unique=True)
 
     # ── companies ──────────────────────────────────────────────────────────
-    await db["companies"].create_index("id", unique=True, background=True)
+    await db["companies"].create_index("id", unique=True)
 
     # ── token_blacklist ────────────────────────────────────────────────────
-    await db["token_blacklist"].create_index("jti", unique=True, background=True)
+    await db["token_blacklist"].create_index("jti", unique=True)
     # TTL index: MongoDB removes expired token documents automatically.
     await db["token_blacklist"].create_index(
         "expires_at",
         expireAfterSeconds=0,
-        background=True,
     )
 
     logger.info("MongoDB indexes verified / created")

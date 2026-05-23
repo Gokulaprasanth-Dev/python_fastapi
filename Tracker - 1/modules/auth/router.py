@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from core.config.settings import get_settings
+from core.config.dependencies import AppSettings
+from core.config.settings import Settings
 from core.db.motor import database
 from core.events.event_bus import NoOpEventBus
 from core.middleware.rate_limit import limiter
@@ -27,14 +28,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _bearer = HTTPBearer()
 
 
-def get_uow() -> UnitOfWork:
+def get_uow(settings: AppSettings) -> UnitOfWork:
     """
     FastAPI dependency that returns the appropriate Unit of Work.
 
-    Returns MongoUnitOfWork (real transactions) when MONGO_TRANSACTIONS_ENABLED
-    is True, or NoOpUnitOfWork for standalone-mongod local dev environments.
+    Settings is now injected explicitly so the dependency graph is visible
+    and this function is easy to override in tests.
     """
-    settings = get_settings()
     if settings.mongo_transactions_enabled:
         return MongoUnitOfWork(database.get_client())
     return NoOpUnitOfWork()
