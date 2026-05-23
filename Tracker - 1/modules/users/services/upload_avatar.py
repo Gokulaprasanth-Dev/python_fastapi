@@ -34,13 +34,11 @@ class AvatarUploadService:
         if not user:
             raise UserNotFoundError(user_id)
 
-        # Delete old avatar if exists
         old_url: str | None = user.get("profile_image_url")
         if old_url:
             old_key = self._extract_key(old_url)
             await self.storage.delete_file(old_key)
 
-        # Build new key
         ext = EXTENSION_MAP.get(file.content_type, "jpg")
         key = f"avatars/{user_id}/{uuid4()}.{ext}"
 
@@ -52,10 +50,8 @@ class AvatarUploadService:
             content_type=file.content_type,
         )
 
-        await self.user_writer.update_user(
-            user_id,
-            {"profile_image_url": new_url},
-        )
+        # FIX #9: use dedicated method — no raw dict with arbitrary keys
+        await self.user_writer.update_profile_image(user_id, new_url)
 
         return AvatarUploadResponse(
             user_id=user["id"],
@@ -63,11 +59,7 @@ class AvatarUploadService:
         )
 
     def _extract_key(self, url: str) -> str:
-        """Extract the S3 key from a full URL."""
-        # URL format: https://bucket.s3.region.amazonaws.com/avatars/...
-        # or MinIO:   http://localhost:9000/bucket/avatars/...
         parts = url.split("/")
-        # Key always starts with "avatars/"
         avatar_index = next(
             (i for i, p in enumerate(parts) if p == "avatars"), None
         )

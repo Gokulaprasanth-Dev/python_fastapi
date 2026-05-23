@@ -1,0 +1,70 @@
+from typing import Protocol, Self
+
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorClientSession
+
+
+class UnitOfWork(Protocol):
+    """
+    Abstract transaction boundary.
+
+    Usage:
+        async with uow:
+            await repo.create(...)
+            await repo.create(...)
+        # commits on clean exit, rolls back on exception
+    """
+
+    async def __aenter__(self) -> Self: ...
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None: ...
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
+
+    @property
+    def session(self) -> AsyncIOMotorClientSession | None: ...
+
+
+class MongoUnitOfWork:
+    """
+    MongoDB-backed Unit of Work.
+
+    Wraps motor's client session and transaction lifecycle.
+    Commits automatically on clean context-manager exit.
+    Aborts automatically if an exception is raised.
+
+    Usage:
+        uow = MongoUnitOfWork(motor_client)
+        async with uow:
+            await company_repo.create_company(company, session=uow.session)
+            await user_repo.create_user(user, session=uow.session)
+    """
+
+    def __init__(self, client: AsyncIOMotorClient) -> None:
+        self._client = client
+        self._session: AsyncIOMotorClientSession | None = None
+
+    @property
+    def session(self) -> AsyncIOMotorClientSession | None:
+        return self._session
+
+    async def __aenter__(self) -> "MongoUnitOfWork":
+        self._session = await self._client.start_session()
+        self._session.start_transaction()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        try:
+            if exc_type is None:
+                await self.commit()
+            else:
+                await self.rollback()
+        finally:
+            await self._session.end_session()
+            self._session = None
+
+    async def commit(self) -> None:
+        if self._session:
+            await self._session.commit_transaction()
+
+    async def rollback(self) -> None:
+        if self._session:
+            await self._session.abort_transaction()
