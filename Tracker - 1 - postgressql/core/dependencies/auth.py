@@ -3,11 +3,12 @@ from uuid import UUID
 
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.motor import database
+from core.db.postgres import get_db_session
 from core.exceptions.base import ForbiddenError
 from core.security.jwt import verify_access_token, TokenVerifyResult
-from modules.auth.adapters.mongo_token_blacklist_repository import MongoTokenBlacklistRepository
+from modules.auth.adapters.postgres_token_blacklist_repository import PostgresTokenBlacklistRepository
 from modules.auth.exceptions import InvalidTokenError, TokenExpiredError, TokenRevokedError
 
 _bearer = HTTPBearer()
@@ -15,14 +16,12 @@ _bearer = HTTPBearer()
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
-    db=Depends(database.get_database),
+    session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     token = credentials.credentials
 
     result, payload = verify_access_token(token)
 
-    # Fix 8: distinguish expired vs invalid — expired still has a valid
-    # signature so it's meaningful to tell the client why it was rejected.
     if result is TokenVerifyResult.EXPIRED:
         raise TokenExpiredError()
 
@@ -30,13 +29,11 @@ async def get_current_user(
         raise InvalidTokenError()
 
     jti = payload.get("jti")
-    blacklist_repo = MongoTokenBlacklistRepository(db)
+    blacklist_repo = PostgresTokenBlacklistRepository(session)
 
     if await blacklist_repo.is_token_blacklisted(jti):
         raise TokenRevokedError()
 
-    # Fix 6: normalise sub to a canonical UUID string so path-parameter
-    # comparisons (current_user["sub"] == user_id) are format-safe.
     try:
         payload["sub"] = str(UUID(payload["sub"]))
     except (ValueError, AttributeError):
@@ -49,12 +46,6 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 
 def require_role(*roles: str):
-    """
-    Dependency factory that enforces role-based access control.
-
-    Usage:
-        @router.delete("/{user_id}/hard", dependencies=[Depends(require_role("admin"))])
-    """
     async def _check(current_user: CurrentUser) -> dict:
         if current_user.get("role") not in roles:
             raise ForbiddenError(

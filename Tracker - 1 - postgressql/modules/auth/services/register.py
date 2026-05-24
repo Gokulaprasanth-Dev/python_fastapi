@@ -10,7 +10,7 @@ from modules.companies.model import CompanyModel
 from modules.users.model import UserModel
 
 from core.security.password import hash_password
-from core.uow.mongo_unit_of_work import UnitOfWork
+from core.uow.postgres_unit_of_work import UnitOfWork
 
 
 class RegisterService:
@@ -27,12 +27,6 @@ class RegisterService:
         self.uow = uow
 
     async def execute(self, data: RegisterRequest) -> RegisterResponse:
-        # Pre-flight uniqueness check: fast-fail for UX — avoids unnecessary
-        # writes. This is NOT the ultimate correctness guard; the unique index
-        # on users.email is. Under a race condition two concurrent registrations
-        # with the same email could both pass here, but the second insert will
-        # raise a DuplicateKeyError which is caught by the global exception
-        # handler and surfaces as a 409 Conflict.
         if await self.user_reader.email_exist(data.email):
             raise EmailAlreadyExistsError(data.email)
 

@@ -1,22 +1,20 @@
 services:
-  mongo:
-    image: mongo:7
-    command: ["--replSet", "rs0", "--bind_ip_all"]
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: trackr
+      POSTGRES_PASSWORD: trackr
+      POSTGRES_DB: trackr_dev
     ports:
-      - "27017:27017"
+      - "5432:5432"
     volumes:
-      - mongo_data:/data/db
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: |
-        mongosh --quiet --eval "
-          try { rs.status().ok } catch(e) {
-            rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]});
-          }
-        "
+      test: ["CMD-SHELL", "pg_isready -U trackr -d trackr_dev"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 10s
 
   minio:
     image: minio/minio
@@ -31,5 +29,5 @@ services:
       - minio_data:/data
 
 volumes:
-  mongo_data:
+  postgres_data:
   minio_data:

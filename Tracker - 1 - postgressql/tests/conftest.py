@@ -2,12 +2,9 @@
 Shared test fixtures.
 
 Provides lightweight in-memory fakes for repository protocols so unit
-tests never touch MongoDB, S3, or the network.
+tests never touch PostgreSQL, S3, or the network.
 """
 
-from datetime import datetime, timezone
-from typing import AsyncGenerator
-from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest

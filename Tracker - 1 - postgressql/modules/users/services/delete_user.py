@@ -34,8 +34,8 @@ class HardDeleteUserService:
     """
     Permanently removes a user and their associated data:
       1. Avatar file deleted from S3 (if one exists).
-      2. Blacklisted tokens for the user purged from the collection.
-      3. User document hard-deleted from MongoDB.
+      2. Blacklisted tokens for the user purged.
+      3. User document hard-deleted from the database.
       4. UserDeletedEvent published to the event bus.
     """
 
@@ -74,7 +74,7 @@ class HardDeleteUserService:
         if self._blacklist_col is not None:
             await self._blacklist_col.delete_many({"user_id": user_id})
 
-        # 3. Remove the user document.
+        # 3. Remove the user record.
         await self.user_writer.hard_delete_user(user_id)
 
         # 4. Publish deletion event.

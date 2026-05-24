@@ -1,16 +1,15 @@
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config.dependencies import AppSettings
-from core.config.settings import Settings
-from core.db.motor import database
+from core.db.postgres import get_db_session
 from core.events.event_bus import NoOpEventBus
 from core.middleware.rate_limit import limiter
-from core.uow.mongo_unit_of_work import MongoUnitOfWork, NoOpUnitOfWork, UnitOfWork
+from core.uow.postgres_unit_of_work import PostgresUnitOfWork, UnitOfWork
+from core.db.postgres import database
 
-from modules.users.adapters.mongo_user_repository import MongoUserRepository
-from modules.companies.adapters.mongo_company_repository import MongoCompanyRepository
+from modules.users.adapters.postgres_user_repository import PostgresUserRepository
+from modules.companies.adapters.postgres_company_repository import PostgresCompanyRepository
 
 from modules.auth.schemas.register_request_schema import RegisterRequest
 from modules.auth.schemas.register_response_schema import RegisterResponse
@@ -20,7 +19,7 @@ from modules.auth.schemas.login_request_schema import LoginRequest
 from modules.auth.schemas.login_response_schema import LoginResponse
 from modules.auth.services.login import LoginService
 
-from modules.auth.adapters.mongo_token_blacklist_repository import MongoTokenBlacklistRepository
+from modules.auth.adapters.postgres_token_blacklist_repository import PostgresTokenBlacklistRepository
 from modules.auth.services.logout import LogoutService
 
 
@@ -28,16 +27,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _bearer = HTTPBearer()
 
 
-def get_uow(settings: AppSettings) -> UnitOfWork:
-    """
-    FastAPI dependency that returns the appropriate Unit of Work.
-
-    Settings is now injected explicitly so the dependency graph is visible
-    and this function is easy to override in tests.
-    """
-    if settings.mongo_transactions_enabled:
-        return MongoUnitOfWork(database.get_client())
-    return NoOpUnitOfWork()
+def get_uow(session: AsyncSession = Depends(get_db_session)) -> UnitOfWork:
+    return PostgresUnitOfWork(database.get_session_factory())
 
 
 @router.post(
@@ -49,11 +40,11 @@ def get_uow(settings: AppSettings) -> UnitOfWork:
 async def register(
     request: Request,
     data: RegisterRequest,
-    db: AsyncIOMotorDatabase = Depends(database.get_database),
+    session: AsyncSession = Depends(get_db_session),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RegisterResponse:
-    user_repository = MongoUserRepository(db)
-    company_repository = MongoCompanyRepository(db)
+    user_repository = PostgresUserRepository(session)
+    company_repository = PostgresCompanyRepository(session)
     service = RegisterService(
         user_reader=user_repository,
         user_writer=user_repository,
@@ -72,9 +63,9 @@ async def register(
 async def login(
     request: Request,
     data: LoginRequest,
-    db: AsyncIOMotorDatabase = Depends(database.get_database),
+    session: AsyncSession = Depends(get_db_session),
 ) -> LoginResponse:
-    user_repository = MongoUserRepository(db)
+    user_repository = PostgresUserRepository(session)
     service = LoginService(user_reader=user_repository)
     return await service.execute(data)
 
@@ -85,9 +76,9 @@ async def login(
 )
 async def logout(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
-    db: AsyncIOMotorDatabase = Depends(database.get_database),
+    session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    token_blacklist_repository = MongoTokenBlacklistRepository(db)
+    token_blacklist_repository = PostgresTokenBlacklistRepository(session)
     service = LogoutService(
         blacklisted_token_write=token_blacklist_repository,
         blacklisted_token_read=token_blacklist_repository,

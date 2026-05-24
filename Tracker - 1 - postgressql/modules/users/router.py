@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, status, UploadFile, File
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.motor import database
+from core.db.postgres import get_db_session
 from core.dependencies.auth import CurrentUser, require_role
 from core.exceptions.base import ForbiddenError
 from core.storage.dependencies import Storage
 
-from modules.auth.adapters.mongo_token_blacklist_repository import MongoTokenBlacklistRepository
-from modules.users.adapters.mongo_user_repository import MongoUserRepository
+from modules.users.adapters.postgres_user_repository import PostgresUserRepository
 from modules.users.schemas.update_user_request_schema import UpdateUserRequest
 from modules.users.schemas.update_user_response_schema import UpdateUserResponse
 from modules.users.schemas.avatar_upload_response_schema import AvatarUploadResponse
@@ -27,11 +26,11 @@ async def update_user(
     user_id: str,
     data: UpdateUserRequest,
     current_user: CurrentUser,
-    db: AsyncIOMotorDatabase = Depends(database.get_database),
+    session: AsyncSession = Depends(get_db_session),
 ) -> UpdateUserResponse:
     if current_user["sub"] != user_id:
         raise ForbiddenError("You can only update your own profile")
-    repo = MongoUserRepository(db)
+    repo = PostgresUserRepository(session)
     service = UpdateUserService(user_reader=repo, user_writer=repo)
     return await service.execute(user_id, data)
 
@@ -43,11 +42,11 @@ async def update_user(
 async def soft_delete_user(
     user_id: str,
     current_user: CurrentUser,
-    db: AsyncIOMotorDatabase = Depends(database.get_database),
+    session: AsyncSession = Depends(get_db_session),
 ):
     if current_user["sub"] != user_id and current_user.get("role") != "admin":
         raise ForbiddenError("You can only delete your own account")
-    repo = MongoUserRepository(db)
+    repo = PostgresUserRepository(session)
     service = SoftDeleteUserService(user_reader=repo, user_writer=repo)
     await service.execute(user_id)
 
@@ -59,16 +58,26 @@ async def soft_delete_user(
 )
 async def hard_delete_user(
     user_id: str,
-    storage: Storage = ...,
-    db: AsyncIOMotorDatabase = Depends(database.get_database),
+    storage: Storage,
+    session: AsyncSession = Depends(get_db_session),
 ):
-    repo = MongoUserRepository(db)
-    blacklist_col = db["token_blacklist"]
+    repo = PostgresUserRepository(session)
+    # Purge blacklisted tokens via direct session query
+    from sqlalchemy import delete
+    from core.db.tables.token_blacklist_table import TokenBlacklistTable
+    
+    async def _purge_tokens(user_id: str):
+        await session.execute(
+            delete(TokenBlacklistTable).where(TokenBlacklistTable.user_id == user_id)
+        )
+
     service = HardDeleteUserService(
         user_reader=repo,
         user_writer=repo,
         storage=storage,
-        blacklist_col=blacklist_col,
+        blacklist_col=type("_Col", (), {
+            "delete_many": lambda self, q: _purge_tokens(q.get("user_id", ""))
+        })(),
     )
     await service.execute(user_id)
 
@@ -81,13 +90,13 @@ async def hard_delete_user(
 async def upload_avatar(
     user_id: str,
     file: UploadFile = File(...),
-    current_user: CurrentUser = ...,
-    storage: Storage = ...,
-    db: AsyncIOMotorDatabase = Depends(database.get_database),
+    current_user: CurrentUser = Depends(),
+    storage: Storage = Depends(),
+    session: AsyncSession = Depends(get_db_session),
 ) -> AvatarUploadResponse:
     if current_user["sub"] != user_id:
         raise ForbiddenError("You can only update your own avatar")
-    repo = MongoUserRepository(db)
+    repo = PostgresUserRepository(session)
     service = AvatarUploadService(
         user_reader=repo,
         user_writer=repo,

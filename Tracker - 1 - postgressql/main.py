@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import logging.config
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -12,47 +14,59 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from api.v1.router import v1_router
 from core.config.settings import get_settings
-from core.db.motor import database
-from core.db.indexes import ensure_indexes
+from core.db.postgres import database, get_db_session
 from core.exceptions.handlers import register_exception_handlers
 from core.middleware.rate_limit import limiter
 from core.middleware.request_id import RequestIdFilter, RequestIdMiddleware
 
 
 def _configure_logging() -> None:
-    """
-    Configure structured logging with request ID injection.
-
-    Every log line gets a [request_id] field so production log queries
-    like `grep <uuid>` show the full lifecycle of a single request.
-    The format is kept simple enough to ingest in most log aggregators
-    (Datadog, CloudWatch, Loki) without extra parsing rules.
-    """
     handler = logging.StreamHandler()
     handler.addFilter(RequestIdFilter())
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)-8s %(name)s [%(request_id)s] %(message)s",
         handlers=[handler],
     )
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
-    # Suppress noisy third-party loggers in production.
-    logging.getLogger("motor").setLevel(logging.WARNING)
-    logging.getLogger("pymongo").setLevel(logging.WARNING)
+
+async def _token_cleanup_task(interval_seconds: int = 3600) -> None:
+    """
+    Background task: purge expired tokens from token_blacklist every hour.
+    Replaces the MongoDB TTL index.
+    """
+    from sqlalchemy import delete
+    from core.db.tables.token_blacklist_table import TokenBlacklistTable
+
+    logger = logging.getLogger(__name__)
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            factory = database.get_session_factory()
+            async with factory() as session:
+                result = await session.execute(
+                    delete(TokenBlacklistTable).where(
+                        TokenBlacklistTable.expires_at < datetime.now(timezone.utc)
+                    )
+                )
+                await session.commit()
+                logger.info("Token cleanup: removed %d expired tokens", result.rowcount)
+        except Exception:
+            logger.exception("Token cleanup task failed")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await database.connect()
-    await ensure_indexes(database.get_database())
+    cleanup_task = asyncio.create_task(_token_cleanup_task())
     yield
+    cleanup_task.cancel()
     await database.disconnect()
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
-
     _configure_logging()
 
     app = FastAPI(
@@ -61,16 +75,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Request ID must be first so all subsequent middleware and handlers
-    # can read the correlation ID from the context var.
     app.add_middleware(RequestIdMiddleware)
 
-    # Attach the rate-limiter state so slowapi can find it.
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 
-    # CORS — restrict to configured origins in non-local environments.
     if settings.cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -88,7 +98,6 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    # Trusted hosts — only enforce when a list is configured.
     if settings.trusted_hosts:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 
