@@ -1,0 +1,35 @@
+services:
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: |
+        mongosh --quiet --eval "
+          try { rs.status().ok } catch(e) {
+            rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]});
+          }
+        "
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  minio:
+    image: minio/minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9100:9000"   # MinIO API     → http://localhost:9100
+      - "9101:9001"   # MinIO console → http://localhost:9101
+    volumes:
+      - minio_data:/data
+
+volumes:
+  mongo_data:
+  minio_data:
